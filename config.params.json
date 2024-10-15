@@ -1,6 +1,6 @@
 {
   "CdkBackendStack": "FallbackMessagingService",
-  "SqsVisibilityTimeout": 300,
+  "SqsVisibilityTimeout": 30,
   "sesConfigSetName": "ses-config-set",
   "createSESConfigSet": "true",
   "smsConfigSetName": "sms-config-set",
