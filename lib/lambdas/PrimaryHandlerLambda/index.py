@@ -4,6 +4,7 @@ import boto3
 from datetime import datetime
 from send_email import send_email
 from send_sms import send_sms
+from send_whatsapp import send_whatsapp
 
 sqs = boto3.client('sqs')
 dynamodb = boto3.resource('dynamodb')
@@ -97,12 +98,10 @@ def send_message(channel, sender, recipient, content):
         } 
         return send_sms(sender, recipient, send_body)
     elif channel == "whatsapp":
-        # Placeholder for WhatsApp logic
         send_body = {
             "message": content['message']
-            # Add additional fields specific to WhatsApp if necessary
         }
-        pass  # Replace with actual function call to send WhatsApp message
+        return send_whatsapp(sender, recipient, send_body)
 
 def store_message(message_id, recipient, sender, send_body, channel, use_case, fallback_channel, pc_message_sent_timestamp, fallback_body):
     table = dynamodb.Table(os.environ['DYNAMODB_TABLE_NAME'])

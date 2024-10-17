@@ -1,3 +1,14 @@
+*.js
+!jest.config.js
+*.d.ts
 node_modules
-test
+
+# CDK asset staging directory
+.cdk.staging
 cdk.out
+
+## Testing folder
+test/
+
+# Ignore all examples-1.json files in botocore
+lib/lambdas/*/botocore/data/**/examples-1.json

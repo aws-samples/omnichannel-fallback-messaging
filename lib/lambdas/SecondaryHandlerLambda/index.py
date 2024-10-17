@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 from send_email import send_email
 from send_sms import send_sms
+from send_whatsapp import send_whatsapp
 
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(os.environ['DYNAMODB_TABLE_NAME'])
@@ -83,6 +84,4 @@ def send_secondary_message(channel, sender, recipient, send_body):
             "configuration_set": send_body['configuration_set']
         })
     elif channel == "whatsapp":
-        # Placeholder for WhatsApp logic
-        # Implement WhatsApp message sending logic here
-        pass  # Replace with actual function call to send WhatsApp message
+        send_whatsapp(sender, recipient, send_body)

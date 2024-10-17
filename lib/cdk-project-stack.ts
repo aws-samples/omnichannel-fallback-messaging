@@ -35,12 +35,19 @@ export class CdkBackendStack extends Stack {
     const createSMSConfigSet = configParams["createSMSConfigSet"];
     const smsConfigSetName = configParams["smsConfigSetName"];
 
-    // DynamoDB table
+    // DynamoDB table for Message status
     const messageTable = new dynamodb.Table(this, "MessageTable", {
       partitionKey: { name: "messageId", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.RETAIN,
       pointInTimeRecovery: true,
+    });
+
+    // DynamoDB table for WhatsApp message id mapping
+    const whatsappMappingTable = new dynamodb.Table(this, "WhatsAppMappingTable", {
+      partitionKey: { name: "whatsapp_msg_id", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: RemovalPolicy.RETAIN,
     });
 
     // SQS Queues
@@ -106,6 +113,7 @@ export class CdkBackendStack extends Stack {
         principals: [
           new iam.ServicePrincipal("ses.amazonaws.com"),
           new iam.ServicePrincipal("sms-voice.amazonaws.com"),
+          new iam.ServicePrincipal("social-messaging.amazonaws.com"),
         ],
         resources: ["*"],
       })
@@ -213,51 +221,10 @@ export class CdkBackendStack extends Stack {
           PRIMARY_QUEUE_URL: primaryQueue.queueUrl,
           FALLBACK_QUEUE_URL: fallbackQueue.queueUrl,
           DYNAMODB_TABLE_NAME: messageTable.tableName,
-          SNS_TOPIC_ARN: snsTopic.topicArn,
+          SNS_TOPIC_ARN: snsTopic.topicArn
         },
       }
     );
-
-    // Grant KMS Decrypt permissions to Lambda
-    kmsKey.grantDecrypt(primaryHandlerLambda);
-
-    // Email Event Processor Lambda
-    const emailEventProcessorLambda = new lambda.Function(
-      this,
-      "EmailEventProcessorLambda",
-      {
-        runtime: lambda.Runtime.PYTHON_3_12,
-        code: lambda.Code.fromAsset("lib/lambdas/EmailEventProcessorLambda"),
-        handler: "index.lambda_handler",
-        timeout: Duration.seconds(30),
-        memorySize: 256,
-        environment: {
-          DYNAMODB_TABLE_NAME: messageTable.tableName,
-        },
-      }
-    );
-
-    // Grant KMS Decrypt permissions to Lambda
-    kmsKey.grantDecrypt(emailEventProcessorLambda);
-
-    // SMS Event Processor Lambda
-    const smsEventProcessorLambda = new lambda.Function(
-      this,
-      "SMSEventProcessorLambda",
-      {
-        runtime: lambda.Runtime.PYTHON_3_12,
-        code: lambda.Code.fromAsset("lib/lambdas/SMSEventProcessorLambda"),
-        handler: "index.lambda_handler",
-        timeout: Duration.seconds(30),
-        memorySize: 256,
-        environment: {
-          DYNAMODB_TABLE_NAME: messageTable.tableName,
-        },
-      }
-    );
-
-    // Grant KMS Decrypt permissions to Lambda
-    kmsKey.grantDecrypt(smsEventProcessorLambda);
 
     // Secondary Message Handler Lambda
     const secondaryHandlerLambda = new lambda.Function(
@@ -275,19 +242,74 @@ export class CdkBackendStack extends Stack {
       }
     );
 
+    // Email Event Processor Lambda
+    const emailEventProcessorLambda = new lambda.Function(
+      this,
+      "EmailEventProcessorLambda",
+      {
+        runtime: lambda.Runtime.PYTHON_3_12,
+        code: lambda.Code.fromAsset("lib/lambdas/EmailEventProcessorLambda"),
+        handler: "index.lambda_handler",
+        timeout: Duration.seconds(30),
+        memorySize: 256,
+        environment: {
+          DYNAMODB_TABLE_NAME: messageTable.tableName,
+        },
+      }
+    );
+
+    // SMS Event Processor Lambda
+    const smsEventProcessorLambda = new lambda.Function(
+      this,
+      "SMSEventProcessorLambda",
+      {
+        runtime: lambda.Runtime.PYTHON_3_12,
+        code: lambda.Code.fromAsset("lib/lambdas/SMSEventProcessorLambda"),
+        handler: "index.lambda_handler",
+        timeout: Duration.seconds(30),
+        memorySize: 256,
+        environment: {
+          DYNAMODB_TABLE_NAME: messageTable.tableName,
+        },
+      }
+    );
+
+    // WhatsApp Event Processor Lambda
+    const whatsappEventProcessorLambda = new lambda.Function(
+      this,
+      "WhatsAppEventProcessorLambda",
+      {
+        runtime: lambda.Runtime.PYTHON_3_12,
+        code: lambda.Code.fromAsset("lib/lambdas/WhatsAppEventProcessorLambda"),
+        handler: "index.lambda_handler",
+        timeout: Duration.seconds(30),
+        memorySize: 256,
+        environment: {
+          DYNAMODB_TABLE_NAME: messageTable.tableName,
+          WHATSAPP_MAPPING: whatsappMappingTable.tableName,
+        },
+      }
+    );
+
     // Grant KMS Decrypt permissions to Lambda
+    kmsKey.grantDecrypt(primaryHandlerLambda);
     kmsKey.grantDecrypt(secondaryHandlerLambda);
+    kmsKey.grantDecrypt(emailEventProcessorLambda);
+    kmsKey.grantDecrypt(smsEventProcessorLambda);
+    kmsKey.grantDecrypt(whatsappEventProcessorLambda);
 
     // Grant DynamoDB and SQS permissions for primaryHandlerLambda
-    messageTable.grantReadWriteData(primaryHandlerLambda);
-    fallbackQueue.grantSendMessages(primaryHandlerLambda);
+    //messageTable.grantReadWriteData(primaryHandlerLambda);
+    //fallbackQueue.grantSendMessages(primaryHandlerLambda);
 
     primaryHandlerLambda.addToRolePolicy(
       new iam.PolicyStatement({
         actions: [
+          "kms:Decrypt",
           "ses:SendEmail",
           "ses:SendTemplatedEmail",
           "sms-voice:SendTextMessage",
+          "social-messaging:SendWhatsAppMessage"
         ],
         effect: iam.Effect.ALLOW,
         resources: ["*"],
@@ -308,15 +330,17 @@ export class CdkBackendStack extends Stack {
     );
 
     // Grant DynamoDB and SQS permissions for secondaryHandlerLambda
-    messageTable.grantReadWriteData(secondaryHandlerLambda);
-    fallbackQueue.grantConsumeMessages(secondaryHandlerLambda);
+    //messageTable.grantReadWriteData(secondaryHandlerLambda);
+    //fallbackQueue.grantConsumeMessages(secondaryHandlerLambda);
 
     secondaryHandlerLambda.addToRolePolicy(
       new iam.PolicyStatement({
         actions: [
+          "kms:Decrypt",
           "ses:SendEmail",
           "ses:SendTemplatedEmail",
           "sms-voice:SendTextMessage",
+          "social-messaging:SendWhatsAppMessage"
         ],
         effect: iam.Effect.ALLOW,
         resources: ["*"],
@@ -333,13 +357,15 @@ export class CdkBackendStack extends Stack {
           "dynamodb:UpdateItem",
         ],
         effect: iam.Effect.ALLOW,
-        resources: [messageTable.tableArn, fallbackQueue.queueArn],
+        resources: [messageTable.tableArn, fallbackQueue.queueArn, whatsappMappingTable.tableArn],
       })
     );
 
-    // Grant DynamoDB permission for Email and SMS eventProcessorLambdas
-    messageTable.grantReadWriteData(emailEventProcessorLambda);
-    messageTable.grantReadWriteData(smsEventProcessorLambda);
+    // Grant DynamoDB permission for Email, SMS and WhatsApp eventProcessorLambdas
+    //messageTable.grantReadWriteData(emailEventProcessorLambda);
+    //messageTable.grantReadWriteData(smsEventProcessorLambda);
+    //messageTable.grantReadWriteData(whatsappEventProcessorLambda);
+    //whatsappMappingTable.grantReadWriteData(whatsappEventProcessorLambda);
 
     emailEventProcessorLambda.addToRolePolicy(
       new iam.PolicyStatement({
@@ -357,7 +383,15 @@ export class CdkBackendStack extends Stack {
       })
     );
 
-    // Subscribe Email and SMS processor Lambdas to SNS
+    whatsappEventProcessorLambda.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:PutItem"],
+        effect: iam.Effect.ALLOW,
+        resources: [messageTable.tableArn, whatsappMappingTable.tableArn, fallbackQueue.queueArn],
+      })
+    );
+
+    // Subscribe Email, SMS and WhatsApp processor Lambdas to SNS
     snsTopic.addSubscription(
       new subscriptions.LambdaSubscription(smsEventProcessorLambda, {
         filterPolicyWithMessageBody: {
@@ -384,6 +418,16 @@ export class CdkBackendStack extends Stack {
               ),
             }),
           }),
+        },
+      })
+    );
+
+    snsTopic.addSubscription(
+      new subscriptions.LambdaSubscription(whatsappEventProcessorLambda, {
+        filterPolicyWithMessageBody: {
+          whatsAppWebhookEntry: sns.FilterOrPolicy.filter(
+            sns.SubscriptionFilter.existsFilter()
+          ),
         },
       })
     );
@@ -489,6 +533,22 @@ export class CdkBackendStack extends Stack {
     );
 
     /**************************************************************************************************************
+     * WhatsApp Backend *
+     **************************************************************************************************************/
+
+    // Allow End User Messaging Social to publish events on SNS topic
+    snsTopic.addToResourcePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        principals: [
+          new iam.ServicePrincipal("social-messaging.amazonaws.com"),
+        ],
+        actions: ["sns:Publish"],
+        resources: [snsTopic.topicArn],
+      })
+    );
+
+    /**************************************************************************************************************
      * CDK Outputs *
      **************************************************************************************************************/
 
@@ -512,6 +572,11 @@ export class CdkBackendStack extends Stack {
       description: "SMS Event Processor Lambda function name",
     });
 
+    new CfnOutput(this, "WhatsAppEventProcessorLambdaName", {
+      value: whatsappEventProcessorLambda.functionName,
+      description: "WhatsApp Event Processor Lambda function name",
+    });
+
     new CfnOutput(this, "SecondaryHandlerLambdaName", {
       value: secondaryHandlerLambda.functionName,
       description: "Secondary Handler Lambda function name",
@@ -520,6 +585,16 @@ export class CdkBackendStack extends Stack {
     new CfnOutput(this, "MessageTableName", {
       value: messageTable.tableName,
       description: "DynamoDB table name",
+    });
+
+    new CfnOutput(this, "SNSTopicARN", {
+      value: snsTopic.topicArn,
+      description: "SNS topic ARN",
+    });
+
+    new CfnOutput(this, "WhatsAppMappingTableName", {
+      value: whatsappMappingTable.tableName,
+      description: "DynamoDB table name for WhatsApp mapping",
     });
 
     /**************************************************************************************************************
