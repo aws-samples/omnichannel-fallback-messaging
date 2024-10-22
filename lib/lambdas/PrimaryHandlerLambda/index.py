@@ -87,7 +87,7 @@ def send_message(channel, sender, recipient, content):
                 "text": content.get('text'),
                 "html": content.get('html')
             } 
-            if 'configuration_set' in send_body:
+            if 'configuration_set' in content:
                 send_body['configuration_set'] = content['configuration_set']                   
         return send_email(sender, recipient, send_body)
     elif channel == "sms":
