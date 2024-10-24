@@ -85,7 +85,7 @@ This guide walks you through deploying the project from the omnichannel-fallback
 Once the infrastructure has been deployed, you can use the API to send messages across multiple channels (Email, SMS, and WhatsApp) with fallback logic. Below is an example request for sending a one-time password (OTP) for `Nutrition.co`, using WhatsApp as the primary channel and SMS as the fallback.
 
 1. **API Endpoint**
-   The API Gateway will provide an endpoint URL after deployment (CDK output). You can use this endpoint to send requests.
+   The API Gateway will provide an endpoint URL after deployment and a randomly generated API key (CDK output). You can use this endpoint and API key to send requests.
 
 2. **Example Request Payload**
 

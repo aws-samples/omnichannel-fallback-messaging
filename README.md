@@ -10,7 +10,7 @@ Users can send Email, SMS or WhatsApp messages as the primary and fallback chann
 
 ![ArchitectureDiagram](docs/ArchitectureDiagram.png)
 
-- **Amazon API Gateway:** This exposes an API endpoint to send messages via multiple channels (Email, SMS and WhatsApp). The user sends the message payload with details of the primary and fallback channels via this gateway.
+- **Amazon API Gateway:** This exposes an API endpoint secured by an API key to send messages via multiple channels (Email, SMS and WhatsApp). The user sends the message payload with details of the primary and fallback channels via this gateway.
 
 - **Amazon SQS (Simple Queue Service):** Messages received by the API Gateway are placed into a queue in SQS. This ensures that messages are processed asynchronously and reliably, even during traffic spikes or when the system is busy.
 

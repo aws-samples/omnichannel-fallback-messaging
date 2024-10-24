@@ -20,6 +20,7 @@ import * as ses from "aws-cdk-lib/aws-ses";
 import * as customResources from "aws-cdk-lib/custom-resources";
 import * as kms from "aws-cdk-lib/aws-kms";
 import * as logs from "aws-cdk-lib/aws-logs";
+import * as crypto from 'crypto';
 
 import path = require("path");
 
@@ -140,6 +141,29 @@ export class CdkBackendStack extends Stack {
 
     const messages = api.root.addResource("messages");
 
+    const generateRandomApiKey = (length: number) => {
+      return crypto.randomBytes(length).toString('base64').slice(0, length).replace(/\+/g, '0').replace(/\//g, '0');
+    };
+    const randomApiKeyValue = generateRandomApiKey(20);
+
+    const apiKey = api.addApiKey("ApiKey", {
+      value: randomApiKeyValue
+    });
+
+    const usagePlan = api.addUsagePlan("UsagePlan", {
+      name: "FallbackMessagingUsagePlan",
+      throttle: {
+        rateLimit: 100,
+        burstLimit: 200
+      }
+    });
+
+    usagePlan.addApiKey(apiKey);
+
+    usagePlan.addApiStage({
+      stage: api.deploymentStage,
+    });
+
     // SQS Integration for API Gateway
     const sendMessageIntegration = new apigateway.AwsIntegration({
       service: "sqs",
@@ -182,6 +206,7 @@ export class CdkBackendStack extends Stack {
     });
 
     messages.addMethod("POST", sendMessageIntegration, {
+      apiKeyRequired: true,
       methodResponses: [{ statusCode: "200" }],
       requestValidatorOptions: {
         validateRequestBody: true,
@@ -552,34 +577,9 @@ export class CdkBackendStack extends Stack {
      * CDK Outputs *
      **************************************************************************************************************/
 
-    new CfnOutput(this, "ApiUrl", {
-      value: api.url,
-      description: "API Gateway URL",
-    });
-
-    new CfnOutput(this, "PrimaryHandlerLambdaName", {
-      value: primaryHandlerLambda.functionName,
-      description: "Primary Handler Lambda function name",
-    });
-
-    new CfnOutput(this, "EmailEventProcessorLambdaName", {
-      value: emailEventProcessorLambda.functionName,
-      description: "Email Event Processor Lambda function name",
-    });
-
-    new CfnOutput(this, "SMSEventProcessorLambdaName", {
-      value: smsEventProcessorLambda.functionName,
-      description: "SMS Event Processor Lambda function name",
-    });
-
-    new CfnOutput(this, "WhatsAppEventProcessorLambdaName", {
-      value: whatsappEventProcessorLambda.functionName,
-      description: "WhatsApp Event Processor Lambda function name",
-    });
-
-    new CfnOutput(this, "SecondaryHandlerLambdaName", {
-      value: secondaryHandlerLambda.functionName,
-      description: "Secondary Handler Lambda function name",
+    new cdk.CfnOutput(this, "ApiUrl", {
+      value: `${api.url}messages`,
+      description: "API Gateway URL with /messages endpoint",
     });
 
     new CfnOutput(this, "MessageTableName", {
@@ -587,14 +587,10 @@ export class CdkBackendStack extends Stack {
       description: "DynamoDB table name",
     });
 
-    new CfnOutput(this, "SNSTopicARN", {
-      value: snsTopic.topicArn,
-      description: "SNS topic ARN",
-    });
-
-    new CfnOutput(this, "WhatsAppMappingTableName", {
-      value: whatsappMappingTable.tableName,
-      description: "DynamoDB table name for WhatsApp mapping",
+    new cdk.CfnOutput(this, "ApiKeyValueOutput", {
+      value: randomApiKeyValue,
+      description: "The generated random value of the API Key",
+      exportName: "FallbackMessagingApiKeyValue"
     });
 
     /**************************************************************************************************************
